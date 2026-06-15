@@ -1,0 +1,230 @@
+import numpy as np
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.metrics import confusion_matrix, classification_report, precision_score, recall_score
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers, models
+from tensorflow.keras.datasets import mnist
+from tensorflow.keras.utils import to_categorical
+from tensorflow.keras.optimizers import Adam
+import sys
+
+print("="*70)
+print("HANDWRITTEN DIGIT RECOGNIZER - CNN with MNIST Dataset")
+print("="*70)
+
+# Set random seeds
+np.random.seed(42)
+tf.random.set_seed(42)
+
+print("\n[1/9] Loading Libraries...")
+print(f"TensorFlow version: {tf.__version__}")
+print(f"Keras version: {keras.__version__}")
+print(f"NumPy version: {np.__version__}")
+
+# Load dataset
+print("\n[2/9] Loading MNIST Dataset...")
+(x_train, y_train), (x_test, y_test) = mnist.load_data()
+print(f"Training data shape: {x_train.shape}")
+print(f"Test data shape: {x_test.shape}")
+print(f"Pixel value range: [{x_train.min()}, {x_train.max()}]")
+
+# Preprocess data
+print("\n[3/9] Preprocessing Data...")
+x_train_normalized = x_train.astype('float32') / 255.0
+x_test_normalized = x_test.astype('float32') / 255.0
+x_train_reshaped = x_train_normalized.reshape(-1, 28, 28, 1)
+x_test_reshaped = x_test_normalized.reshape(-1, 28, 28, 1)
+y_train_categorical = to_categorical(y_train, 10)
+y_test_categorical = to_categorical(y_test, 10)
+print(f"Normalized training data shape: {x_train_reshaped.shape}")
+print(f"Normalized test data shape: {x_test_reshaped.shape}")
+
+# Build model
+print("\n[4/9] Building CNN Model...")
+model = models.Sequential([
+    layers.Conv2D(32, (3, 3), activation='relu', padding='same', input_shape=(28, 28, 1)),
+    layers.BatchNormalization(),
+    layers.MaxPooling2D((2, 2)),
+    layers.Dropout(0.25),
+    
+    layers.Conv2D(64, (3, 3), activation='relu', padding='same'),
+    layers.BatchNormalization(),
+    layers.MaxPooling2D((2, 2)),
+    layers.Dropout(0.25),
+    
+    layers.Conv2D(128, (3, 3), activation='relu', padding='same'),
+    layers.BatchNormalization(),
+    layers.MaxPooling2D((2, 2)),
+    layers.Dropout(0.25),
+    
+    layers.Flatten(),
+    layers.Dense(256, activation='relu'),
+    layers.BatchNormalization(),
+    layers.Dropout(0.5),
+    
+    layers.Dense(128, activation='relu'),
+    layers.BatchNormalization(),
+    layers.Dropout(0.5),
+    
+    layers.Dense(10, activation='softmax')
+])
+
+print("Model Architecture Summary:")
+model.summary()
+
+# Compile model
+print("\n[5/9] Compiling Model...")
+model.compile(
+    optimizer=Adam(learning_rate=0.001),
+    loss='categorical_crossentropy',
+    metrics=['accuracy']
+)
+print("Model compiled with Adam optimizer and categorical crossentropy loss")
+
+# Train model
+print("\n[6/9] Training Model (15 epochs)...")
+print("-" * 70)
+history = model.fit(
+    x_train_reshaped, y_train_categorical,
+    epochs=15,
+    batch_size=128,
+    validation_split=0.1,
+    verbose=1
+)
+
+# Evaluate model
+print("\n[7/9] Evaluating Model Performance...")
+test_loss, test_accuracy = model.evaluate(x_test_reshaped, y_test_categorical, verbose=0)
+print(f"\n{'='*70}")
+print(f"TEST RESULTS:")
+print(f"{'='*70}")
+print(f"Test Loss:     {test_loss:.4f}")
+print(f"Test Accuracy: {test_accuracy:.4f} ({test_accuracy*100:.2f}%)")
+
+# Make predictions
+print("\n[8/9] Making Predictions...")
+y_pred_prob = model.predict(x_test_reshaped, verbose=0)
+y_pred = np.argmax(y_pred_prob, axis=1)
+
+# Calculate metrics
+precision = precision_score(y_test, y_pred, average='weighted')
+recall = recall_score(y_test, y_pred, average='weighted')
+
+print(f"Precision (Weighted): {precision:.4f}")
+print(f"Recall (Weighted):    {recall:.4f}")
+
+# Classification Report
+print("\nDetailed Classification Report:")
+print(classification_report(y_test, y_pred, target_names=[str(i) for i in range(10)]))
+
+# Per-digit accuracy
+print("\n[9/9] Analyzing Per-Digit Accuracy...")
+per_digit_accuracy = {}
+for digit in range(10):
+    digit_mask = y_test == digit
+    digit_predictions = y_pred[digit_mask]
+    digit_true_labels = y_test[digit_mask]
+    accuracy = np.mean(digit_predictions == digit_true_labels)
+    per_digit_accuracy[digit] = accuracy
+
+print("\nPer-Digit Accuracy:")
+print("-" * 40)
+for digit, accuracy in per_digit_accuracy.items():
+    bar = "█" * int(accuracy * 40)
+    print(f"Digit {digit}: {bar:40s} {accuracy*100:6.2f}%")
+
+# Misclassification analysis
+misclassified_count = np.sum(y_pred != y_test)
+print(f"\n{'='*70}")
+print(f"MISCLASSIFICATION ANALYSIS:")
+print(f"{'='*70}")
+print(f"Total misclassified: {misclassified_count} / {len(y_test)}")
+print(f"Misclassification rate: {np.mean(y_pred != y_test)*100:.2f}%")
+
+# Save visualizations
+print("\nGenerating visualizations...")
+
+# Training history plot
+fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+fig.suptitle('Model Training History', fontsize=14, fontweight='bold')
+
+axes[0].plot(history.history['accuracy'], label='Training Accuracy', linewidth=2)
+axes[0].plot(history.history['val_accuracy'], label='Validation Accuracy', linewidth=2)
+axes[0].set_xlabel('Epoch', fontsize=11)
+axes[0].set_ylabel('Accuracy', fontsize=11)
+axes[0].set_title('Model Accuracy Over Epochs', fontsize=12)
+axes[0].legend(fontsize=10)
+axes[0].grid(True, alpha=0.3)
+
+axes[1].plot(history.history['loss'], label='Training Loss', linewidth=2)
+axes[1].plot(history.history['val_loss'], label='Validation Loss', linewidth=2)
+axes[1].set_xlabel('Epoch', fontsize=11)
+axes[1].set_ylabel('Loss', fontsize=11)
+axes[1].set_title('Model Loss Over Epochs', fontsize=12)
+axes[1].legend(fontsize=10)
+axes[1].grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.savefig('training_history.png', dpi=100, bbox_inches='tight')
+print("✓ Saved: training_history.png")
+
+# Confusion matrix
+cm = confusion_matrix(y_test, y_pred)
+plt.figure(figsize=(10, 8))
+sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
+            xticklabels=range(10), yticklabels=range(10),
+            cbar_kws={'label': 'Count'})
+plt.title('Confusion Matrix - MNIST Digit Classification', fontsize=14, fontweight='bold')
+plt.xlabel('Predicted Label', fontsize=12)
+plt.ylabel('True Label', fontsize=12)
+plt.tight_layout()
+plt.savefig('confusion_matrix.png', dpi=100, bbox_inches='tight')
+print("✓ Saved: confusion_matrix.png")
+
+# Per-digit accuracy chart
+digits = list(per_digit_accuracy.keys())
+accuracies = list(per_digit_accuracy.values())
+
+plt.figure(figsize=(12, 5))
+bars = plt.bar(digits, accuracies, color='steelblue', edgecolor='black', linewidth=1.5)
+
+for bar, acc in zip(bars, accuracies):
+    if acc >= 0.99:
+        bar.set_color('green')
+    elif acc >= 0.95:
+        bar.set_color('steelblue')
+    else:
+        bar.set_color('orange')
+
+plt.xlabel('Digit', fontsize=12)
+plt.ylabel('Accuracy', fontsize=12)
+plt.title('Per-Digit Classification Accuracy on Test Set', fontsize=14, fontweight='bold')
+plt.xticks(digits)
+plt.ylim([0.85, 1.02])
+plt.grid(axis='y', alpha=0.3)
+
+for digit, accuracy in per_digit_accuracy.items():
+    plt.text(digit, accuracy + 0.005, f'{accuracy:.2%}', ha='center', fontsize=10)
+
+plt.tight_layout()
+plt.savefig('per_digit_accuracy.png', dpi=100, bbox_inches='tight')
+print("✓ Saved: per_digit_accuracy.png")
+
+# Summary
+print("\n" + "="*70)
+print("TRAINING COMPLETE!")
+print("="*70)
+print(f"Final Training Accuracy:   {history.history['accuracy'][-1]:.4f}")
+print(f"Final Validation Accuracy: {history.history['val_accuracy'][-1]:.4f}")
+print(f"Final Training Loss:       {history.history['loss'][-1]:.4f}")
+print(f"Final Validation Loss:     {history.history['val_loss'][-1]:.4f}")
+print("="*70)
+print("\nVisualization files saved:")
+print("  • training_history.png")
+print("  • confusion_matrix.png")
+print("  • per_digit_accuracy.png")
+print("="*70)
